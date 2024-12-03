@@ -34,13 +34,13 @@ class RewardModel(nn.Module):
         x = torch.cat([state, action_one_hot, next_state], dim=1)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return torch.tanh(self.fc3(x))  # Scaled between -1 and 1
+        return torch.tanh(self.fc3(x)) 
 
 # Placeholder ranking heuristic
 def human_rank(state, action, next_state):
     pole_angle = abs(next_state[2])  
     base_score = math.exp(-pole_angle / 0.1)  
-    noise_magnitude = pole_angle / 10  
+    noise_magnitude = pole_angle / 10
     noise = random.gauss(0, noise_magnitude) 
     noisy_score = base_score + noise
     return min(1.0, max(0.0, noisy_score))
@@ -127,12 +127,15 @@ def replay():
 scores = []
 moving_avg_scores = []
 window = 50
+episode_lengths = []
+moving_avg_lengths = []
 
 for e in range(1, episodes + 1):
     state, _ = env.reset()
     state = np.reshape(state, [state_size])
     total_reward = 0
     trajectories = []
+    total_steps = 0
 
     for time in range(500):
         action = choose_action(state, epsilon)
@@ -148,11 +151,12 @@ for e in range(1, episodes + 1):
         next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
         with torch.no_grad():
             model_reward = reward_model(state_tensor, action_tensor, next_state_tensor).squeeze(1).item()
-        combined_reward = model_reward  # Adjust lambda as needed
+        combined_reward = 0.5 * env_reward + 0.5 * model_reward  
         
         memory.append((state, action, combined_reward, next_state, done))
         state = next_state
         total_reward += combined_reward
+        total_steps += 1
         step_count += 1
 
         if step_count % update_target_every_steps == 0:
@@ -161,6 +165,9 @@ for e in range(1, episodes + 1):
         if done:
             break
 
+    episode_lengths.append(total_steps)
+    moving_avg = np.mean(episode_lengths[-window:])
+    moving_avg_lengths.append(moving_avg)
     # Train reward model using collected trajectories
     train_reward_model(trajectories, reward_model, reward_optimizer, reward_criterion)
 
@@ -177,11 +184,13 @@ for e in range(1, episodes + 1):
         epsilon *= epsilon_decay
 
 # Visualization
-plt.plot(scores, label='Episode Score')
-plt.plot(range(window, episodes), moving_avg_scores[window:], label=f'{window}-Episode Moving Average')
+plt.figure(figsize=(10, 6))
+plt.plot(episode_lengths, label='Episode Length')
+plt.plot(range(window, len(episode_lengths)), moving_avg_lengths[window:], label=f'{window}-Episode Moving Average')
 plt.xlabel('Episode')
-plt.ylabel('Score')
-plt.title('DQN with Reward Model on CartPole-v1')
+plt.ylabel('Episode Length')
+plt.title('Episode Length and Moving Average (CartPole-v1)')
+plt.grid()
 plt.legend()
 plt.show()
 
