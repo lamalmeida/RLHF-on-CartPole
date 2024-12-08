@@ -6,10 +6,8 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import matplotlib.pyplot as plt
 
-# Device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Reward Model
 class RewardModel(nn.Module):
     def __init__(self, state_dim):
         super(RewardModel, self).__init__()
@@ -24,7 +22,6 @@ class RewardModel(nn.Module):
     def forward(self, state):
         return self.model(state)
 
-# Policy Network
 class PolicyNetwork(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(PolicyNetwork, self).__init__()
@@ -40,7 +37,6 @@ class PolicyNetwork(nn.Module):
     def forward(self, state):
         return self.model(state)
 
-# Generate a trajectory
 def generate_trajectory(env, policy):
     state = env.reset()
     state = np.array(state[0] if isinstance(state, tuple) else state)
@@ -56,7 +52,6 @@ def generate_trajectory(env, policy):
         state = np.array(next_state[0] if isinstance(next_state, tuple) else next_state)
     return trajectory
 
-# Compute the cumulative reward of a trajectory
 def compute_trajectory_reward(trajectory, reward_model):
     reward_sum = 0
     for state, _ in trajectory:
@@ -66,20 +61,17 @@ def compute_trajectory_reward(trajectory, reward_model):
 
 average_lengths = []
 
-# Train AIHF
 def train_aihf(env, policy, reward_model, num_iterations=500, demo_trajectories=5, preference_pairs=10):
     optimizer_policy = optim.Adam(policy.parameters(), lr=1e-3)
     optimizer_reward = optim.Adam(reward_model.parameters(), lr=1e-4)
     gamma = 0.99
-
+    consecutive_count = 0 
     for iteration in range(num_iterations):
-        # Demonstration data
         demonstrations = [generate_trajectory(env, policy) for _ in range(demo_trajectories)]
         
         avg_length = np.mean([len(traj) for traj in demonstrations])
         average_lengths.append(avg_length)
 
-        # Preferences data
         preferences = []
         for _ in range(preference_pairs):
             traj1, traj2 = generate_trajectory(env, policy), generate_trajectory(env, policy)
@@ -87,7 +79,6 @@ def train_aihf(env, policy, reward_model, num_iterations=500, demo_trajectories=
             label = torch.tensor([[1.0 if reward1 > reward2 else 0.0]], dtype=torch.float32, device=device)
             preferences.append((traj1, traj2, label))
 
-        # Reward Model Training
         reward_model.train()
         for traj1, traj2, label in preferences:
             optimizer_reward.zero_grad()
@@ -98,7 +89,6 @@ def train_aihf(env, policy, reward_model, num_iterations=500, demo_trajectories=
             loss.backward()
             optimizer_reward.step()
 
-        # Policy Training
         policy.train()
         total_steps = 0
         for trajectory in demonstrations:
@@ -119,8 +109,14 @@ def train_aihf(env, policy, reward_model, num_iterations=500, demo_trajectories=
             total_steps += len(trajectory)
 
         print(f"Iteration {iteration + 1}/{num_iterations} completed. Ploicy Loss: {total_steps:.0f}")
+        if total_steps == 2500:
+            consecutive_count += 1
+            if consecutive_count >= 5:
+                print(f"Early stopping triggered at iteration {iteration + 1}.")
+                break
+        else:
+            consecutive_count = 0
 
-# Main Function
 if __name__ == "__main__":
     env = gym.make("CartPole-v1")
     state_dim = env.observation_space.shape[0]
