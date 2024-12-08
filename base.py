@@ -8,7 +8,6 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-# Define the policy network
 class Policy(nn.Module):
     def __init__(self, state_size, action_size):
         super(Policy, self).__init__()
@@ -21,7 +20,6 @@ class Policy(nn.Module):
         x = torch.relu(self.fc2(x))
         return torch.softmax(self.fc3(x), dim=-1)
 
-# Define the reward predictor
 class RewardModel(nn.Module):
     def __init__(self, state_size, action_size):
         super(RewardModel, self).__init__()
@@ -35,7 +33,6 @@ class RewardModel(nn.Module):
         x = torch.relu(self.fc2(x))
         return self.fc3(x)
 
-# Preference-based RL
 class PreferenceBasedRL:
     def __init__(self, env, policy, reward_model):
         self.env = env
@@ -127,33 +124,51 @@ class PreferenceBasedRL:
 
     def train(self, epochs=1000, traj_per_epoch=10):
         losses = []
+        consecutive_count = 0 
         for epoch in range(epochs):
             trajectories = self.collect_trajectories(traj_per_epoch)
             trajectory_averages = np.mean([len(traj) for traj in trajectories]) 
             preferences = self.simulate_preferences(trajectories)
             self.train_reward_model(preferences)
             self.train_policy(trajectories)
-            losses.append(sum(self.predict_reward(trajectories[0])))
+            losses.append(np.mean([len(traj) for traj in trajectories]))
             print(f"Epoch {epoch+1}/{epochs} Loss: {losses[-1]}")
-            print(f"Trajectory Averages: {trajectory_averages}")
+            if trajectory_averages >= 500:
+                consecutive_count += 1
+                if consecutive_count >= 5:
+                    print(f"Early stopping triggered at epoch {epoch+1}. Saving models and plotting.")
+                    break
+            else:
+                consecutive_count = 0
         return losses
 
-# Main execution
-env = gym.make('CartPole-v1')
-policy = Policy(state_size=env.observation_space.shape[0], action_size=env.action_space.n)
-reward_model = RewardModel(state_size=env.observation_space.shape[0], action_size=1)
-agent = PreferenceBasedRL(env, policy, reward_model)
-
-losses = agent.train()
+import time
+times = []
+for i in range(10):
+    env = gym.make('CartPole-v1')
+    policy = Policy(state_size=env.observation_space.shape[0], action_size=env.action_space.n)
+    reward_model = RewardModel(state_size=env.observation_space.shape[0], action_size=1)
+    agent = PreferenceBasedRL(env, policy, reward_model)
+    start = time.time()
+    losses = agent.train()
+    end = time.time()
+    times.append(end-start)
+print(np.mean(times))
+window=50
+moving_average = np.convolve(losses, np.ones(window)/window, mode='valid')
 env.close()
 
-# Plot the loss
 plt.plot(losses)
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training Loss')
+
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, len(losses) + 1), losses, label='Episode Length')
+plt.plot(range(window, len(losses) + 1), moving_average, label=f'{window}-Episode Moving Average')
+plt.xlabel('Episode')
+plt.ylabel('Episode Length')
+plt.title('Episode Length and Moving Average (CartPole-v1)')
+plt.grid()
+plt.legend()
 plt.show()
 
-# Save the model
 torch.save(policy.state_dict(), "cartpole_policy.pth")
 torch.save(reward_model.state_dict(), "cartpole_reward_model.pth")
