@@ -7,7 +7,6 @@ import numpy as np
 from collections import deque
 import matplotlib.pyplot as plt
 import math
-# Define the Q-Network
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size):
         super(QNetwork, self).__init__()
@@ -20,7 +19,6 @@ class QNetwork(nn.Module):
         x = torch.relu(self.fc2(x))
         return self.fc3(x)
 
-# Reward model for ranking-based learning
 class RewardModel(nn.Module):
     def __init__(self, state_size, action_size):
         super(RewardModel, self).__init__()
@@ -36,7 +34,6 @@ class RewardModel(nn.Module):
         x = torch.relu(self.fc2(x))
         return torch.tanh(self.fc3(x)) 
 
-# Placeholder ranking heuristic
 def human_rank(state, action, next_state):
     pole_angle = abs(next_state[2])  
     base_score = math.exp(-pole_angle / 0.1)  
@@ -45,7 +42,6 @@ def human_rank(state, action, next_state):
     noisy_score = base_score + noise
     return min(1.0, max(0.0, noisy_score))
 
-# Train the reward model based on ranked trajectories
 def train_reward_model(trajectories, reward_model, optimizer, criterion):
     states = torch.stack([torch.FloatTensor(tr[0]) for tr in trajectories]).to(device)
     actions = torch.tensor([tr[1] for tr in trajectories], dtype=torch.long).to(device)
@@ -58,7 +54,6 @@ def train_reward_model(trajectories, reward_model, optimizer, criterion):
     loss.backward()
     optimizer.step()
 
-# Initialize environment and parameters
 env = gym.make('CartPole-v1')
 state_size = env.observation_space.shape[0]
 action_size = env.action_space.n
@@ -86,7 +81,6 @@ memory = deque(maxlen=10000)
 update_target_every_steps = 1000
 step_count = 0
 
-# Choose action using epsilon-greedy policy
 def choose_action(state, epsilon):
     if random.random() <= epsilon:
         return env.action_space.sample()
@@ -96,7 +90,6 @@ def choose_action(state, epsilon):
             q_values = q_network(state)
         return torch.argmax(q_values, dim=1).item()
 
-# Replay and train the Q-network
 def replay():
     if len(memory) < batch_size:
         return
@@ -107,29 +100,25 @@ def replay():
     next_states = torch.stack([torch.FloatTensor(tr[3]) for tr in minibatch]).to(device)
     dones = torch.tensor([tr[4] for tr in minibatch], dtype=torch.float32).unsqueeze(1).to(device)
     
-    # Current Q-values
     current_q = q_network(states).gather(1, actions)
-    
-    # Max Q-values for next states from target network
     with torch.no_grad():
         max_next_q = target_network(next_states).max(1)[0].unsqueeze(1)
         target_q = rewards + (gamma * max_next_q * (1 - dones))
     
-    # Compute loss
     loss = q_criterion(current_q, target_q)
     
-    # Optimize the Q-network
     q_optimizer.zero_grad()
     loss.backward()
     q_optimizer.step()
 
-# Training loop
 scores = []
 moving_avg_scores = []
 window = 50
 episode_lengths = []
 moving_avg_lengths = []
-
+consecutive_count = 0 
+import time
+start = time.time()
 for e in range(1, episodes + 1):
     state, _ = env.reset()
     state = np.reshape(state, [state_size])
@@ -137,15 +126,14 @@ for e in range(1, episodes + 1):
     trajectories = []
     total_steps = 0
 
-    for time in range(500):
+    for ttime in range(500):
         action = choose_action(state, epsilon)
         next_state, _, done, _, _ = env.step(action)
         next_state = np.reshape(next_state, [state_size])
         score = human_rank(state, action, next_state)
         trajectories.append((state, action, next_state, score, done))
         
-        # Compute combined reward
-        env_reward = 1.0  # Standard CartPole reward
+        env_reward = 1.0  
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
         action_tensor = torch.tensor(action).unsqueeze(0).to(device)
         next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
@@ -168,10 +156,8 @@ for e in range(1, episodes + 1):
     episode_lengths.append(total_steps)
     moving_avg = np.mean(episode_lengths[-window:])
     moving_avg_lengths.append(moving_avg)
-    # Train reward model using collected trajectories
     train_reward_model(trajectories, reward_model, reward_optimizer, reward_criterion)
 
-    # Train Q-network
     replay()
 
     scores.append(total_reward)
@@ -180,10 +166,18 @@ for e in range(1, episodes + 1):
     
     print(f"Episode: {e}/{episodes}, Score: {total_reward:.2f}, Avg Score: {moving_avg:.2f}, Epsilon: {epsilon:.2f}")
     
+    if total_steps == 500:
+        consecutive_count += 1
+        if consecutive_count >= 5:
+            print(f"Early stopping triggered at iteration .")
+            break
+    else:
+        consecutive_count = 0
+
     if epsilon > epsilon_min:
         epsilon *= epsilon_decay
-
-# Visualization
+end=time.time()
+print(end-start)
 plt.figure(figsize=(10, 6))
 plt.plot(episode_lengths, label='Episode Length')
 plt.plot(range(window, len(episode_lengths)), moving_avg_lengths[window:], label=f'{window}-Episode Moving Average')
@@ -194,6 +188,5 @@ plt.grid()
 plt.legend()
 plt.show()
 
-# Save the trained models
 torch.save(q_network.state_dict(), 'dqn_cartpole_model.pth')
 torch.save(reward_model.state_dict(), 'reward_model.pth')
