@@ -72,23 +72,34 @@ class PreferenceBasedRL:
                 preferences.append((traj2, traj1))
         return preferences
 
-    def predict_reward(self, trajectory):
+    def _trajectory_reward_tensor(self, trajectory):
         rewards = []
         for state, action in trajectory:
-            state_tensor = torch.FloatTensor(np.array(state[0] if isinstance(state, tuple) else state)).unsqueeze(0)
-            action_tensor = torch.FloatTensor([action]).unsqueeze(0)
-            reward = self.reward_model(state_tensor, action_tensor).item()
-            rewards.append(reward)
+            state_tensor = torch.FloatTensor(
+                np.array(state[0] if isinstance(state, tuple) else state)
+            ).unsqueeze(0)
+            action_tensor = torch.tensor([[float(action)]], dtype=torch.float32)
+            rewards.append(self.reward_model(state_tensor, action_tensor).squeeze())
+        return torch.stack(rewards).sum()
+
+    def predict_reward(self, trajectory):
+        rewards = []
+        with torch.no_grad():
+            for state, action in trajectory:
+                state_tensor = torch.FloatTensor(
+                    np.array(state[0] if isinstance(state, tuple) else state)
+                ).unsqueeze(0)
+                action_tensor = torch.tensor([[float(action)]], dtype=torch.float32)
+                reward = self.reward_model(state_tensor, action_tensor).item()
+                rewards.append(reward)
         return rewards
 
     def train_reward_model(self, preferences):
-        for traj1, traj2 in preferences:
-            r1 = sum(self.predict_reward(traj1))
-            r2 = sum(self.predict_reward(traj2))
-            r1 = torch.tensor(r1, requires_grad=True)
-            r2 = torch.tensor(r2, requires_grad=True)
-            prob = torch.exp(r1) / (torch.exp(r1) + torch.exp(r2))
-            loss = -torch.log(prob)
+        for preferred_traj, rejected_traj in preferences:
+            preferred_reward = self._trajectory_reward_tensor(preferred_traj)
+            rejected_reward = self._trajectory_reward_tensor(rejected_traj)
+            loss = -torch.log(torch.sigmoid(preferred_reward - rejected_reward) + 1e-8)
+
             self.reward_optimizer.zero_grad()
             loss.backward()
             self.reward_optimizer.step()
