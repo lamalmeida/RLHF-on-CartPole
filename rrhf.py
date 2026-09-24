@@ -129,7 +129,8 @@ for e in range(1, episodes + 1):
 
     for ttime in range(500):
         action = choose_action(state, epsilon)
-        next_state, _, done, _, _ = env.step(action)
+        next_state, _, terminated, truncated, _ = env.step(action)
+        done = terminated or truncated
         next_state = np.reshape(next_state, [state_size])
         score = human_rank(state, action, next_state)
         trajectories.append((state, action, next_state, score, done))
