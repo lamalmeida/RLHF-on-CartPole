@@ -22,12 +22,13 @@ class QNetwork(nn.Module):
 class RewardModel(nn.Module):
     def __init__(self, state_size, action_size):
         super(RewardModel, self).__init__()
+        self.action_size = action_size
         self.fc1 = nn.Linear(state_size * 2 + action_size, 64)
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 1)
 
     def forward(self, state, action, next_state):
-        action_one_hot = torch.zeros(action.size(0), action_size).to(state.device)
+        action_one_hot = torch.zeros(action.size(0), self.action_size, device=state.device)
         action_one_hot.scatter_(1, action.unsqueeze(1), 1)
         x = torch.cat([state, action_one_hot, next_state], dim=1)
         x = torch.relu(self.fc1(x))
